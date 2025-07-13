@@ -1,39 +1,69 @@
-const axios = require('axios');
-const { refreshAccessToken } = require('../config/spotifyAuth');
+import axios from 'axios';
+import dotenv from 'dotenv';
+dotenv.config();
 
-const getHeaders = async () => {
-  const token = await refreshAccessToken();
+const getAccessToken = async () => {
+  const auth = Buffer.from(
+    `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+  ).toString('base64');
+
+  const response = await axios.post(
+    'https://accounts.spotify.com/api/token',
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: process.env.SPOTIFY_REFRESH_TOKEN,
+    }),
+    {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    }
+  );
+
+  return response.data.access_token;
+};
+
+export const fetchTopTracks = async () => {
+  const token = await getAccessToken();
+  const res = await axios.get('https://api.spotify.com/v1/me/top/tracks?limit=10', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return res.data.items.map(track => ({
+    name: track.name,
+    artist: track.artists.map(a => a.name).join(', '),
+    uri: track.uri,
+  }));
+};
+
+export const fetchNowPlaying = async () => {
+  const token = await getAccessToken();
+  const res = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.data || !res.data.item) return null;
+
   return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json'
+    name: res.data.item.name,
+    artist: res.data.item.artists.map(a => a.name).join(', '),
+    uri: res.data.item.uri,
   };
 };
 
-const getTopTracks = async () => {
-  const headers = await getHeaders();
-  const response = await axios.get('https://api.spotify.com/v1/me/top/tracks?limit=10', { headers });
-  return response.data.items;
+export const pausePlayback = async () => {
+  const token = await getAccessToken();
+  await axios.put('https://api.spotify.com/v1/me/player/pause', null, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 };
 
-const getNowPlaying = async () => {
-  const headers = await getHeaders();
-  const response = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', { headers });
-  return response.data;
-};
-
-const playTrack = async (uri) => {
-  const headers = await getHeaders();
-  await axios.put('https://api.spotify.com/v1/me/player/play', { uris: [uri] }, { headers });
-};
-
-const pauseTrack = async () => {
-  const headers = await getHeaders();
-  await axios.put('https://api.spotify.com/v1/me/player/pause', {}, { headers });
-};
-
-module.exports = {
-  getTopTracks,
-  getNowPlaying,
-  playTrack,
-  pauseTrack
+export const playTrack = async (uri) => {
+  const token = await getAccessToken();
+  await axios.put(
+    'https://api.spotify.com/v1/me/player/play',
+    { uris: [uri] },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
 };
